@@ -8,7 +8,8 @@ export default function Banners() {
   const [slotFilter, setSlotFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ slotId: '', imageUrl: '', linkUrl: '', alt: '', active: true, device: 'any', width: '', height: '', sizePreset: '' });
+  const defaultSlide = () => ({ imageUrl: '', linkUrl: '', alt: '', durationSeconds: 4 });
+  const [form, setForm] = useState({ slotId: '', active: true, device: 'any', width: '', height: '', sizePreset: '', slides: [defaultSlide()] });
   const [saving, setSaving] = useState(false);
 
   const selectedSlot = form.slotId ? slots.find((s) => s._id === form.slotId) : null;
@@ -33,23 +34,36 @@ export default function Banners() {
       .finally(() => setLoading(false));
   }, []);
 
+  const addSlide = () => setForm((f) => ({ ...f, slides: [...(f.slides || []), defaultSlide()] }));
+  const updateSlide = (index, field, value) => setForm((f) => ({
+    ...f,
+    slides: f.slides.map((s, i) => i === index ? { ...s, [field]: value } : s),
+  }));
+  const removeSlide = (index) => setForm((f) => ({
+    ...f,
+    slides: f.slides.length > 1 ? f.slides.filter((_, i) => i !== index) : f.slides,
+  }));
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.slotId || !form.imageUrl?.trim()) return;
+    const validSlides = (form.slides || []).filter((s) => s.imageUrl?.trim());
+    if (!form.slotId || validSlides.length === 0) return;
     setSaving(true);
     setError('');
     try {
-      const payload = { ...form };
-      payload.width = form.width === '' ? null : Number(form.width);
-      payload.height = form.height === '' ? null : Number(form.height);
-      const res = await apiFetch('/api/banners', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
+      const payload = {
+        slotId: form.slotId,
+        active: form.active,
+        device: form.device,
+        width: form.width === '' ? null : Number(form.width),
+        height: form.height === '' ? null : Number(form.height),
+        slides: validSlides.map((s) => ({ ...s, durationSeconds: Math.max(1, Math.min(120, Number(s.durationSeconds) || 4)) })),
+      };
+      const res = await apiFetch('/api/banners', { method: 'POST', body: JSON.stringify(payload) });
       if (!res.ok) {
         const d = await res.json(); setError(d.error || 'Erro'); return;
       }
-      setForm({ slotId: '', imageUrl: '', linkUrl: '', alt: '', active: true, device: 'any', width: '', height: '', sizePreset: '' });
+      setForm({ slotId: '', active: true, device: 'any', width: '', height: '', sizePreset: '', slides: [defaultSlide()] });
       loadBanners();
     } catch {
       setError('Falha ao salvar');
@@ -147,16 +161,35 @@ export default function Banners() {
             </div>
           )}
           <div className="form-group">
-            <label>URL da imagem</label>
-            <input value={form.imageUrl} onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))} placeholder="https://…" required />
-          </div>
-          <div className="form-group">
-            <label>Link (opcional)</label>
-            <input value={form.linkUrl} onChange={(e) => setForm((f) => ({ ...f, linkUrl: e.target.value }))} placeholder="https://…" />
-          </div>
-          <div className="form-group">
-            <label>Texto alternativo (opcional)</label>
-            <input value={form.alt} onChange={(e) => setForm((f) => ({ ...f, alt: e.target.value }))} />
+            <label>Slides (carrossel) — tempo de exibição por imagem</label>
+            {(form.slides?.length ? form.slides : [defaultSlide()]).map((slide, index) => (
+              <div key={index} className="card" style={{ marginBottom: 8, padding: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <strong>Imagem {index + 1}</strong>
+                  {(form.slides?.length ? form.slides.length : 1) > 1 && (
+                    <button type="button" className="btn btn--small btn--secondary" onClick={() => removeSlide(index)}>Remover</button>
+                  )}
+                </div>
+                <div className="form-group">
+                  <label>URL da imagem</label>
+                  <input value={slide.imageUrl} onChange={(e) => updateSlide(index, 'imageUrl', e.target.value)} placeholder="https://…" />
+                </div>
+                <div className="form-group">
+                  <label>Link (opcional)</label>
+                  <input value={slide.linkUrl} onChange={(e) => updateSlide(index, 'linkUrl', e.target.value)} placeholder="https://…" />
+                </div>
+                <div className="form-group">
+                  <label>Texto alternativo (opcional)</label>
+                  <input value={slide.alt} onChange={(e) => updateSlide(index, 'alt', e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label>Exibir por (segundos)</label>
+                  <input type="number" min={1} max={120} value={slide.durationSeconds} onChange={(e) => updateSlide(index, 'durationSeconds', e.target.value)} placeholder="4" style={{ maxWidth: 80 }} />
+                </div>
+              </div>
+            ))}
+            <button type="button" className="btn btn--secondary btn--small" onClick={addSlide}>+ Adicionar slide</button>
+            <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: 6 }}>Várias imagens = carrossel. Uma imagem = banner fixo. Duração só vale no carrossel.</p>
           </div>
           <div className="form-group">
             <label><input type="checkbox" checked={form.active} onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))} /> Ativo</label>
@@ -181,6 +214,7 @@ export default function Banners() {
               <th>Slot</th>
               <th>Dispositivo</th>
               <th>Tamanho</th>
+              <th>Slides</th>
               <th>Imagem</th>
               <th>Link</th>
               <th>Ativo</th>
@@ -193,6 +227,7 @@ export default function Banners() {
                 <td>{b.slotId?.code || b.slotId}</td>
                 <td>{b.device === 'any' ? 'Todos' : b.device === 'mobile' ? 'Mobile' : 'Desktop'}</td>
                 <td>{(b.width != null || b.height != null) ? `${b.width ?? '?'}×${b.height ?? '?'}` : '–'}</td>
+                <td>{b.slides?.length > 1 ? `Carrossel (${b.slides.length})` : '1'}</td>
                 <td><a href={b.imageUrl} target="_blank" rel="noopener noreferrer">Abrir</a></td>
                 <td>{b.linkUrl ? <a href={b.linkUrl} target="_blank" rel="noopener noreferrer">Link</a> : '–'}</td>
                 <td><button type="button" className="btn btn--small btn--secondary" onClick={() => toggleActive(b)}>{b.active ? 'Ativo' : 'Inativo'}</button></td>
