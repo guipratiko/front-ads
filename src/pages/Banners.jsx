@@ -11,6 +11,7 @@ export default function Banners() {
   const defaultSlide = () => ({ imageUrl: '', linkUrl: '', alt: '', durationSeconds: 4 });
   const [form, setForm] = useState({ slotId: '', active: true, device: 'any', width: '', height: '', sizePreset: '', slides: [defaultSlide()] });
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState(null);
 
   const selectedSlot = form.slotId ? slots.find((s) => s._id === form.slotId) : null;
   const slotSizes = getSlotSizes(selectedSlot);
@@ -50,20 +51,29 @@ export default function Banners() {
     if (!form.slotId || validSlides.length === 0) return;
     setSaving(true);
     setError('');
+    const payload = {
+      slotId: form.slotId,
+      active: form.active,
+      device: form.device,
+      width: form.width === '' ? null : Number(form.width),
+      height: form.height === '' ? null : Number(form.height),
+      slides: validSlides.map((s) => ({ ...s, durationSeconds: Math.max(1, Math.min(120, Number(s.durationSeconds) || 4)) })),
+    };
     try {
-      const payload = {
-        slotId: form.slotId,
-        active: form.active,
-        device: form.device,
-        width: form.width === '' ? null : Number(form.width),
-        height: form.height === '' ? null : Number(form.height),
-        slides: validSlides.map((s) => ({ ...s, durationSeconds: Math.max(1, Math.min(120, Number(s.durationSeconds) || 4)) })),
-      };
-      const res = await apiFetch('/api/banners', { method: 'POST', body: JSON.stringify(payload) });
-      if (!res.ok) {
-        const d = await res.json(); setError(d.error || 'Erro'); return;
+      if (editingId) {
+        const res = await apiFetch(`/api/banners/${editingId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+        if (!res.ok) {
+          const d = await res.json(); setError(d.error || 'Erro'); return;
+        }
+        setEditingId(null);
+        setForm({ slotId: '', active: true, device: 'any', width: '', height: '', sizePreset: '', slides: [defaultSlide()] });
+      } else {
+        const res = await apiFetch('/api/banners', { method: 'POST', body: JSON.stringify(payload) });
+        if (!res.ok) {
+          const d = await res.json(); setError(d.error || 'Erro'); return;
+        }
+        setForm({ slotId: '', active: true, device: 'any', width: '', height: '', sizePreset: '', slides: [defaultSlide()] });
       }
-      setForm({ slotId: '', active: true, device: 'any', width: '', height: '', sizePreset: '', slides: [defaultSlide()] });
       loadBanners();
     } catch {
       setError('Falha ao salvar');
@@ -86,8 +96,29 @@ export default function Banners() {
     if (!confirm('Excluir este banner?')) return;
     try {
       await apiFetch(`/api/banners/${id}`, { method: 'DELETE' });
+      if (editingId === id) setEditingId(null);
       loadBanners();
     } catch {}
+  };
+
+  const startEdit = (banner) => {
+    const slotId = banner.slotId?._id || banner.slotId;
+    const device = banner.device || 'any';
+    const width = banner.width != null ? String(banner.width) : '';
+    const height = banner.height != null ? String(banner.height) : '';
+    const sizePreset = (device && width && height) ? `${device}-${width}-${height}` : (width && height ? 'custom' : '');
+    const slides = banner.slides?.length > 0
+      ? banner.slides.map((s) => ({ imageUrl: s.imageUrl || '', linkUrl: s.linkUrl || '', alt: s.alt || '', durationSeconds: s.durationSeconds || 4 }))
+      : [{ imageUrl: banner.imageUrl || '', linkUrl: banner.linkUrl || '', alt: banner.alt || '', durationSeconds: 4 }];
+    setForm({ slotId, active: banner.active !== false, device, width, height, sizePreset, slides });
+    setEditingId(banner._id);
+    setError('');
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setForm({ slotId: '', active: true, device: 'any', width: '', height: '', sizePreset: '', slides: [defaultSlide()] });
+    setError('');
   };
 
   const filtered = slotFilter ? banners.filter((b) => b.slotId?._id === slotFilter || b.slotId === slotFilter) : banners;
@@ -98,6 +129,9 @@ export default function Banners() {
     <>
       <h1>Banners</h1>
       <div className="card">
+        {editingId && (
+          <p style={{ marginBottom: 12, fontWeight: 500, color: '#2563eb' }}>Editando banner</p>
+        )}
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label>Slot</label>
@@ -195,7 +229,14 @@ export default function Banners() {
             <label><input type="checkbox" checked={form.active} onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))} /> Ativo</label>
           </div>
           {error && <p className="error">{error}</p>}
-          <button type="submit" className="btn btn--primary" disabled={saving}>{saving ? 'Salvando…' : 'Adicionar banner'}</button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="submit" className="btn btn--primary" disabled={saving}>
+              {saving ? 'Salvando…' : editingId ? 'Salvar alterações' : 'Adicionar banner'}
+            </button>
+            {editingId && (
+              <button type="button" className="btn btn--secondary" onClick={cancelEdit}>Cancelar</button>
+            )}
+          </div>
         </form>
       </div>
       <div className="form-group filters">
@@ -231,7 +272,10 @@ export default function Banners() {
                 <td><a href={b.imageUrl} target="_blank" rel="noopener noreferrer">Abrir</a></td>
                 <td>{b.linkUrl ? <a href={b.linkUrl} target="_blank" rel="noopener noreferrer">Link</a> : '–'}</td>
                 <td><button type="button" className="btn btn--small btn--secondary" onClick={() => toggleActive(b)}>{b.active ? 'Ativo' : 'Inativo'}</button></td>
-                <td><button type="button" className="btn btn--small btn--danger" onClick={() => remove(b._id)}>Excluir</button></td>
+                <td>
+                  <button type="button" className="btn btn--small btn--secondary" style={{ marginRight: 6 }} onClick={() => startEdit(b)}>Editar</button>
+                  <button type="button" className="btn btn--small btn--danger" onClick={() => remove(b._id)}>Excluir</button>
+                </td>
               </tr>
             ))}
           </tbody>
