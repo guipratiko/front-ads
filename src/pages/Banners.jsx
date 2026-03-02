@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../App';
+import { getSlotSizes } from '../constants/slotSizes';
 
 export default function Banners() {
   const [slots, setSlots] = useState([]);
@@ -11,7 +12,7 @@ export default function Banners() {
   const [saving, setSaving] = useState(false);
 
   const selectedSlot = form.slotId ? slots.find((s) => s._id === form.slotId) : null;
-  const slotSizes = selectedSlot?.recommendedSizes || [];
+  const slotSizes = getSlotSizes(selectedSlot);
 
   const applySizePreset = (presetValue) => {
     if (!presetValue || presetValue === 'custom') {
