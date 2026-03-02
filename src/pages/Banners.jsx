@@ -7,7 +7,7 @@ export default function Banners() {
   const [slotFilter, setSlotFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ slotId: '', imageUrl: '', linkUrl: '', alt: '', active: true });
+  const [form, setForm] = useState({ slotId: '', imageUrl: '', linkUrl: '', alt: '', active: true, device: 'any', width: '', height: '' });
   const [saving, setSaving] = useState(false);
 
   const loadSlots = () => apiFetch('/api/slots').then((r) => r.json()).then(setSlots);
@@ -26,14 +26,17 @@ export default function Banners() {
     setSaving(true);
     setError('');
     try {
+      const payload = { ...form };
+      payload.width = form.width === '' ? null : Number(form.width);
+      payload.height = form.height === '' ? null : Number(form.height);
       const res = await apiFetch('/api/banners', {
         method: 'POST',
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const d = await res.json(); setError(d.error || 'Erro'); return;
       }
-      setForm({ slotId: '', imageUrl: '', linkUrl: '', alt: '', active: true });
+      setForm({ slotId: '', imageUrl: '', linkUrl: '', alt: '', active: true, device: 'any', width: '', height: '' });
       loadBanners();
     } catch {
       setError('Falha ao salvar');
@@ -77,6 +80,38 @@ export default function Banners() {
                 <option key={s._id} value={s._id}>{s.code} – {s.name}</option>
               ))}
             </select>
+            {form.slotId && (() => {
+              const slot = slots.find((s) => s._id === form.slotId);
+              const sizes = slot?.recommendedSizes || [];
+              if (!sizes.length) return null;
+              const mobile = sizes.filter((x) => x.device === 'mobile');
+              const desktop = sizes.filter((x) => x.device === 'desktop');
+              return (
+                <p className="form-hint" style={{ marginTop: 4, fontSize: '0.875rem', color: '#6b7280' }}>
+                  Tamanhos recomendados: {mobile.length ? `Mobile: ${mobile.map((x) => `${x.width}×${x.height}`).join(', ')}` : ''}
+                  {mobile.length && desktop.length ? ' | ' : ''}
+                  {desktop.length ? `Desktop: ${desktop.map((x) => `${x.width}×${x.height}`).join(', ')}` : ''}
+                </p>
+              );
+            })()}
+          </div>
+          <div className="form-group">
+            <label>Dispositivo</label>
+            <select value={form.device} onChange={(e) => setForm((f) => ({ ...f, device: e.target.value }))}>
+              <option value="any">Todos (any)</option>
+              <option value="mobile">Mobile</option>
+              <option value="desktop">Desktop</option>
+            </select>
+          </div>
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <div className="form-group" style={{ flex: '1 1 100px' }}>
+              <label>Largura (px)</label>
+              <input type="number" min="0" placeholder="ex.: 728" value={form.width} onChange={(e) => setForm((f) => ({ ...f, width: e.target.value }))} />
+            </div>
+            <div className="form-group" style={{ flex: '1 1 100px' }}>
+              <label>Altura (px)</label>
+              <input type="number" min="0" placeholder="ex.: 90" value={form.height} onChange={(e) => setForm((f) => ({ ...f, height: e.target.value }))} />
+            </div>
           </div>
           <div className="form-group">
             <label>URL da imagem</label>
@@ -111,6 +146,8 @@ export default function Banners() {
           <thead>
             <tr>
               <th>Slot</th>
+              <th>Dispositivo</th>
+              <th>Tamanho</th>
               <th>Imagem</th>
               <th>Link</th>
               <th>Ativo</th>
@@ -121,6 +158,8 @@ export default function Banners() {
             {filtered.map((b) => (
               <tr key={b._id}>
                 <td>{b.slotId?.code || b.slotId}</td>
+                <td>{b.device === 'any' ? 'Todos' : b.device === 'mobile' ? 'Mobile' : 'Desktop'}</td>
+                <td>{(b.width != null || b.height != null) ? `${b.width ?? '?'}×${b.height ?? '?'}` : '–'}</td>
                 <td><a href={b.imageUrl} target="_blank" rel="noopener noreferrer">Abrir</a></td>
                 <td>{b.linkUrl ? <a href={b.linkUrl} target="_blank" rel="noopener noreferrer">Link</a> : '–'}</td>
                 <td><button type="button" className="btn btn--small btn--secondary" onClick={() => toggleActive(b)}>{b.active ? 'Ativo' : 'Inativo'}</button></td>
